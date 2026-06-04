@@ -17,7 +17,9 @@ def get_engine():
     url = os.getenv("DATABASE_URL")
 
     if url:
-        # Neon entrega URLs con prefijo "postgres://" — SQLAlchemy necesita "postgresql+psycopg2://"
+        url = url.strip()
+        # Neon puede entregar "postgres://" o "postgresql://" — SQLAlchemy necesita "postgresql+psycopg2://"
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
         url = url.replace("postgres://", "postgresql+psycopg2://", 1)
     else:
         url = (
