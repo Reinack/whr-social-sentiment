@@ -14,22 +14,30 @@ import time
 from datetime import datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 
+import truststore
+truststore.inject_into_ssl()
+
+import certifi
+import requests
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from sqlalchemy import text
 from db import get_session
 
-try:
-    from googleapiclient.discovery import build
-    from googleapiclient.errors import HttpError
-except ImportError:
-    print("[!] Instalar: pip install google-api-python-client")
-    sys.exit(1)
+YT_SEARCH_URL   = "https://www.googleapis.com/youtube/v3/search"
+YT_COMMENTS_URL = "https://www.googleapis.com/youtube/v3/commentThreads"
+
+def _yt_get(url: str, params: dict) -> dict:
+    """GET a la API de YouTube con certifi y manejo de errores."""
+    resp = requests.get(url, params=params, verify=certifi.where(), timeout=15)
+    resp.raise_for_status()
+    return resp.json()
 
 # Ventana temporal
 START_DATE = datetime(2022, 1, 1, tzinfo=timezone.utc)
 END_DATE   = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
-# Región ISO2 → código de región YouTube + idioma esperado
+# Región ISO2 -> código de región YouTube + idioma esperado
 YOUTUBE_REGIONS = {
     "US": ("US", "en"),  "GB": ("GB", "en"),  "CA": ("CA", "en"),
     "AU": ("AU", "en"),  "BR": ("BR", "pt"),  "IN": ("IN", "en"),
@@ -76,9 +84,7 @@ def load_youtube(
     region_code, lang = YOUTUBE_REGIONS[iso2.upper()]
     search_q = SEARCH_TERMS.get(lang, SEARCH_TERMS["en"])
 
-    print(f"\n{'[DRY RUN] ' if dry_run else ''}YouTube → {iso2} ({region_code}, {lang})")
-
-    youtube = build("youtube", "v3", developerKey=api_key)
+    print(f"\n{'[DRY RUN] ' if dry_run else ''}YouTube -> {iso2} ({region_code}, {lang})")
 
     # Obtener IDs de base
     with get_session() as session:
@@ -98,7 +104,7 @@ def load_youtube(
     platform_id = platform.id
 
     # Recolectar video IDs por trimestre (para cubrir 2022-2024 uniformemente)
-    video_ids = _get_video_ids(youtube, region_code, search_q)
+    video_ids = _get_video_ids(api_key, region_code, search_q)
     print(f"  Videos encontrados: {len(video_ids)}")
 
     if not video_ids:
@@ -106,7 +112,7 @@ def load_youtube(
         return {"no_data": 1}
 
     # Recolectar comentarios de los videos
-    comments = _get_comments(youtube, video_ids, lang, limit_per_country * 3)
+    comments = _get_comments(api_key, video_ids, lang, limit_per_country * 3)
     print(f"  Comentarios candidatos: {len(comments)}")
 
     # Muestreo estratificado por mes
@@ -154,76 +160,63 @@ def load_youtube(
     return stats
 
 
-def _get_video_ids(youtube, region_code: str, query: str) -> list[str]:
-    """Busca videos relevantes para la región."""
+def _get_video_ids(api_key: str, region_code: str, query: str) -> list[str]:
+    """Busca videos relevantes para la región usando requests."""
     video_ids = []
-
-    # Iterar por trimestres de la ventana temporal
     current = START_DATE
     while current < END_DATE:
         end = min(current + relativedelta(months=3), END_DATE)
-
         try:
-            response = youtube.search().list(
-                part="id",
-                q=query,
-                type="video",
-                regionCode=region_code,
-                relevanceLanguage=region_code.lower(),
-                publishedAfter=current.isoformat().replace("+00:00", "Z"),
-                publishedBefore=end.isoformat().replace("+00:00", "Z"),
-                maxResults=10,
-                order="relevance",
-            ).execute()
-
-            for item in response.get("items", []):
+            data = _yt_get(YT_SEARCH_URL, {
+                "part":            "id",
+                "q":               query,
+                "type":            "video",
+                "regionCode":      region_code,
+                "relevanceLanguage": region_code.lower(),
+                "publishedAfter":  current.strftime("%Y-%m-%dT00:00:00Z"),
+                "publishedBefore": end.strftime("%Y-%m-%dT00:00:00Z"),
+                "maxResults":      10,
+                "order":           "relevance",
+                "key":             api_key,
+            })
+            for item in data.get("items", []):
                 vid_id = item.get("id", {}).get("videoId")
                 if vid_id:
                     video_ids.append(vid_id)
-
-            time.sleep(0.5)  # respetar rate limits
-
-        except HttpError as e:
-            print(f"    [!] Error API en {current.strftime('%Y-%m')}: {e.reason}")
-
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"    [!] Error en {current.strftime('%Y-%m')}: {e}")
         current = end
+    return list(set(video_ids))
 
-    return list(set(video_ids))  # deduplicar
 
-
-def _get_comments(
-    youtube,
-    video_ids: list[str],
-    lang: str,
-    max_total: int,
-) -> list[dict]:
-    """Recolecta comentarios de una lista de videos."""
+def _get_comments(api_key: str, video_ids: list[str], lang: str, max_total: int) -> list[dict]:
+    """Recolecta comentarios de una lista de videos usando requests."""
     comments = []
-
     for video_id in video_ids:
         if len(comments) >= max_total:
             break
         try:
             page_token = None
             while len(comments) < max_total:
-                kwargs = dict(
-                    part="snippet",
-                    videoId=video_id,
-                    maxResults=100,
-                    textFormat="plainText",
-                    order="relevance",
-                )
+                params = {
+                    "part":        "snippet",
+                    "videoId":     video_id,
+                    "maxResults":  100,
+                    "textFormat":  "plainText",
+                    "order":       "relevance",
+                    "key":         api_key,
+                }
                 if page_token:
-                    kwargs["pageToken"] = page_token
+                    params["pageToken"] = page_token
 
-                response = youtube.commentThreads().list(**kwargs).execute()
+                data = _yt_get(YT_COMMENTS_URL, params)
 
-                for item in response.get("items", []):
+                for item in data.get("items", []):
                     snippet = item["snippet"]["topLevelComment"]["snippet"]
                     body = snippet.get("textDisplay", "").strip()
                     if len(body) < MIN_COMMENT_LEN:
                         continue
-
                     published = snippet.get("publishedAt", "")
                     try:
                         dt = datetime.fromisoformat(published.replace("Z", "+00:00"))
@@ -231,26 +224,27 @@ def _get_comments(
                             continue
                     except ValueError:
                         continue
-
                     comments.append({
-                        "body":         body[:2000],
-                        "source_id":    item["id"],
-                        "posted_at":    dt.isoformat(),
-                        "sample_month": dt.strftime("%Y-%m"),
-                        "channel_id":   item["snippet"].get("channelId"),
+                        "body":          body[:2000],
+                        "source_id":     item["id"],
+                        "posted_at":     dt.isoformat(),
+                        "sample_month":  dt.strftime("%Y-%m"),
+                        "channel_id":    item["snippet"].get("channelId"),
                         "lang_expected": lang,
                     })
 
-                page_token = response.get("nextPageToken")
+                page_token = data.get("nextPageToken")
                 if not page_token:
                     break
                 time.sleep(0.3)
 
-        except HttpError as e:
-            if "commentsDisabled" in str(e):
-                pass  # video sin comentarios, continuar
+        except requests.HTTPError as e:
+            if e.response is not None and "commentsDisabled" in e.response.text:
+                pass
             else:
-                print(f"    [!] Error en video {video_id}: {e.reason}")
+                print(f"    [!] Error en video {video_id}: {e}")
+        except Exception as e:
+            print(f"    [!] Error en video {video_id}: {e}")
 
     return comments
 
@@ -278,4 +272,5 @@ if __name__ == "__main__":
 
     print(f"\n{'='*40}")
     print(f"Total insertados: {total['inserted']} | Errores: {total['errors']}")
+
 
