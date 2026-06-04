@@ -165,14 +165,14 @@ def _get_video_ids(api_key: str, region_code: str, query: str) -> list[str]:
     video_ids = []
     current = START_DATE
     while current < END_DATE:
-        end = min(current + relativedelta(months=3), END_DATE)
+        end = min(current + relativedelta(months=12), END_DATE)  # anual: 3 llamadas vs 12
         try:
             data = _yt_get(YT_SEARCH_URL, {
                 "part":            "id",
                 "q":               query,
                 "type":            "video",
                 "regionCode":      region_code,
-                "relevanceLanguage": region_code.lower(),
+                "relevanceLanguage": lang,
                 "publishedAfter":  current.strftime("%Y-%m-%dT00:00:00Z"),
                 "publishedBefore": end.strftime("%Y-%m-%dT00:00:00Z"),
                 "maxResults":      10,
