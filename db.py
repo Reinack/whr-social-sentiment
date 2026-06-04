@@ -1,5 +1,9 @@
 """
 db.py — conexión centralizada a PostgreSQL via SQLAlchemy
+
+Prioridad de conexión:
+  1. DATABASE_URL  (Neon / Render — una sola variable, igual que Football-Analytics)
+  2. DB_USER + DB_PASSWORD + DB_HOST + DB_PORT + DB_NAME  (Docker local / .env)
 """
 import os
 from contextlib import contextmanager
@@ -10,11 +14,18 @@ from sqlalchemy.orm import sessionmaker
 load_dotenv()
 
 def get_engine():
-    url = (
-        f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
-        f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', 5432)}"
-        f"/{os.getenv('DB_NAME')}"
-    )
+    url = os.getenv("DATABASE_URL")
+
+    if url:
+        # Neon entrega URLs con prefijo "postgres://" — SQLAlchemy necesita "postgresql+psycopg2://"
+        url = url.replace("postgres://", "postgresql+psycopg2://", 1)
+    else:
+        url = (
+            f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+            f"@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', 5432)}"
+            f"/{os.getenv('DB_NAME')}"
+        )
+
     return create_engine(url, pool_pre_ping=True, echo=False)
 
 engine = get_engine()

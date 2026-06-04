@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: whr-social-sentiment
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app/main.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DATABASE_URL
+        sync: false          # pegar el connection string de Neon en el dashboard de Render
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
