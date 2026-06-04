@@ -1,4 +1,4 @@
-"""
+﻿"""
 run_pipeline.py
 Orquestador principal del pipeline completo.
 Ejecuta cada fase en orden con logging y manejo de errores.
@@ -47,11 +47,11 @@ def step_whr():
     log("━━ FASE 1: Carga WHR Excel ━━")
     path = os.getenv("WHR_EXCEL_PATH", "data/WHR26_Data_Figure_2_1.xlsx")
     if not os.path.exists(path):
-        log(f"✗ Archivo no encontrado: {path}")
+        log(f"[X] Archivo no encontrado: {path}")
         log("  Copiar el Excel WHR a data/ o ajustar WHR_EXCEL_PATH en .env")
         return False
     stats = load_whr(path)
-    log(f"  ✓ WHR cargado — {stats['inserted']} insertados, {stats['updated']} actualizados")
+    log(f"  [OK] WHR cargado — {stats['inserted']} insertados, {stats['updated']} actualizados")
     return True
 
 
@@ -61,7 +61,7 @@ def step_reddit():
     limit     = int(os.getenv("REDDIT_LIMIT", "400"))
 
     if not os.path.isdir(dumps_dir):
-        log(f"✗ Directorio no encontrado: {dumps_dir}")
+        log(f"[X] Directorio no encontrado: {dumps_dir}")
         log("  Descargar dumps de https://academictorrents.com y colocar en data/reddit/")
         return False
 
@@ -73,7 +73,7 @@ def step_reddit():
         stats = load_reddit(iso2, dumps_dir, limit)
         total_inserted += stats.get("inserted", 0)
 
-    log(f"  ✓ Reddit — {total_inserted} posts insertados en total")
+    log(f"  [OK] Reddit — {total_inserted} posts insertados en total")
     return True
 
 
@@ -83,7 +83,7 @@ def step_youtube():
     limit   = int(os.getenv("YOUTUBE_LIMIT", "400"))
 
     if not api_key:
-        log("✗ YOUTUBE_API_KEY no configurado en .env")
+        log("[X] YOUTUBE_API_KEY no configurado en .env")
         return False
 
     total_inserted = 0
@@ -91,7 +91,7 @@ def step_youtube():
         stats = load_youtube(iso2, api_key, limit)
         total_inserted += stats.get("inserted", 0)
 
-    log(f"  ✓ YouTube — {total_inserted} comentarios insertados en total")
+    log(f"  [OK] YouTube — {total_inserted} comentarios insertados en total")
     return True
 
 
@@ -100,14 +100,14 @@ def step_tsgi():
     tsgi_path = os.getenv("TSGI_PATH", "data/tsgi/")
 
     if not os.path.exists(tsgi_path):
-        log(f"✗ Ruta no encontrada: {tsgi_path}")
+        log(f"[X] Ruta no encontrada: {tsgi_path}")
         log("  Descargar desde https://doi.org/10.7910/DVN/3IL00Q")
         log("  Colocar los CSV en data/tsgi/ o ajustar TSGI_PATH en .env")
         return False
 
     stats = load_tsgi(tsgi_path)
-    log(f"  ✓ TSGI — {stats.get('inserted', 0)} insertados | {stats.get('updated', 0)} actualizados")
-    log("  ℹ Dataset cubre hasta 2023. 2024 sin benchmark TSGI (limitación documentada)")
+    log(f"  [OK] TSGI — {stats.get('inserted', 0)} insertados | {stats.get('updated', 0)} actualizados")
+    log("  [i] Dataset cubre hasta 2023. 2024 sin benchmark TSGI (limitación documentada)")
     return True
 
 
@@ -116,13 +116,13 @@ def step_classify():
     api_key = os.getenv("ANTHROPIC_API_KEY")
 
     if not api_key:
-        log("✗ ANTHROPIC_API_KEY no configurado en .env")
+        log("[X] ANTHROPIC_API_KEY no configurado en .env")
         return False
 
     batch_size = int(os.getenv("CLASSIFY_BATCH_SIZE", "50"))
     stats = classify_batch(batch_size=batch_size, resume=True)
 
-    log(f"  ✓ Clasificación — {stats['classified']} procesados "
+    log(f"  [OK] Clasificación — {stats['classified']} procesados "
         f"| {stats['accepted']} aceptados "
         f"| {stats['rejected']} rechazados")
     return True
@@ -131,7 +131,7 @@ def step_classify():
 def step_analyze():
     log("━━ FASE 4: Análisis y cálculo de gaps WHR ━━")
     stats = compute_results()
-    log(f"  ✓ Análisis — {stats['rows']} filas en analysis_results")
+    log(f"  [OK] Análisis — {stats['rows']} filas en analysis_results")
     return True
 
 
@@ -205,3 +205,4 @@ if __name__ == "__main__":
         step_analyze()
     else:
         parser.print_help()
+

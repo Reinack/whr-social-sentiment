@@ -1,4 +1,4 @@
-"""
+﻿"""
 classifier/classify_posts.py
 Clasifica posts usando Claude (Sonnet) por subindicador WHR, sentimiento e intensidad.
 Procesa en lotes, respeta rate limits y registra todo en la tabla classifications.
@@ -22,7 +22,7 @@ from db import get_session
 try:
     import anthropic
 except ImportError:
-    print("⚠ Instalar: pip install anthropic")
+    print("[!] Instalar: pip install anthropic")
     sys.exit(1)
 
 MODEL = "claude-sonnet-4-20250514"
@@ -81,7 +81,7 @@ def classify_batch(
         # Traer siguiente lote de posts sin clasificar
         posts = _get_pending_posts(batch_size, country_iso2)
         if not posts:
-            print("  ✓ No quedan posts pendientes")
+            print("  [OK] No quedan posts pendientes")
             break
 
         print(f"\n  Procesando lote de {len(posts)} posts...")
@@ -171,10 +171,10 @@ def _classify_one(client, post: dict) -> dict | None:
         return parsed
 
     except json.JSONDecodeError as e:
-        print(f"    ✗ JSON inválido para post {post['post_id']}: {e}")
+        print(f"    [X] JSON inválido para post {post['post_id']}: {e}")
         return None
     except Exception as e:
-        print(f"    ✗ Error clasificando post {post['post_id']}: {e}")
+        print(f"    [X] Error clasificando post {post['post_id']}: {e}")
         return None
 
 
@@ -277,7 +277,7 @@ if __name__ == "__main__":
         show_stats()
     else:
         if not os.getenv("ANTHROPIC_API_KEY"):
-            print("✗ ANTHROPIC_API_KEY no configurado")
+            print("[X] ANTHROPIC_API_KEY no configurado")
             sys.exit(1)
 
         stats = classify_batch(
@@ -291,3 +291,4 @@ if __name__ == "__main__":
               f"Aceptados: {stats['accepted']} | "
               f"Rechazados: {stats['rejected']} | "
               f"Errores: {stats['errors']}")
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 loaders/load_reddit.py
 Carga dumps de Pushshift Reddit (ndjson.zst) a la tabla posts.
 Filtra por subreddit de país, ventana 2022-2024, y muestra estratificado por mes.
@@ -66,7 +66,7 @@ def load_reddit(
     """
     subreddits = SUBREDDITS.get(iso2.upper(), [])
     if not subreddits:
-        print(f"  ⚠ {iso2}: sin subreddits configurados o Reddit bloqueado — omitido")
+        print(f"  [!] {iso2}: sin subreddits configurados o Reddit bloqueado — omitido")
         return {"skipped": 1}
 
     print(f"\n{'[DRY RUN] ' if dry_run else ''}Cargando Reddit para {iso2}")
@@ -84,7 +84,7 @@ def load_reddit(
         ).fetchone()
 
     if not country or not platform:
-        print(f"  ✗ country o platform no encontrado en la base")
+        print(f"  [X] country o platform no encontrado en la base")
         return {"errors": 1}
 
     country_id  = country.id
@@ -108,14 +108,14 @@ def load_reddit(
                 break
 
         if not filepath:
-            print(f"  ⚠ Archivo no encontrado para r/{sub} en {dumps_dir}")
+            print(f"  [!] Archivo no encontrado para r/{sub} en {dumps_dir}")
             continue
 
         print(f"  Leyendo r/{sub} desde {filepath.name}...")
         candidates.extend(_read_dump(filepath, sub))
 
     if not candidates:
-        print(f"  ✗ No se encontraron candidatos para {iso2}")
+        print(f"  [X] No se encontraron candidatos para {iso2}")
         return {"no_data": 1}
 
     print(f"  Candidatos en ventana 2022-2024: {len(candidates)}")
@@ -159,9 +159,9 @@ def load_reddit(
                 stats["inserted"] += 1
             except Exception as e:
                 stats["errors"] += 1
-                print(f"    ✗ Error insertando {post.get('source_id')}: {e}")
+                print(f"    [X] Error insertando {post.get('source_id')}: {e}")
 
-    print(f"  ✓ Insertados: {stats['inserted']} | Errores: {stats['errors']}")
+    print(f"  [OK] Insertados: {stats['inserted']} | Errores: {stats['errors']}")
     return stats
 
 
@@ -220,7 +220,7 @@ def _read_dump(filepath: Path, subreddit: str) -> list[dict]:
                 for line in f:
                     process_line(line)
     except Exception as e:
-        print(f"    ✗ Error leyendo {filepath.name}: {e}")
+        print(f"    [X] Error leyendo {filepath.name}: {e}")
 
     return candidates
 
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     if args.list_subreddits:
         print("\nSubreddits configurados por país:")
         for iso2, subs in SUBREDDITS.items():
-            status = "⚠ Reddit bloqueado" if not subs else ", ".join(f"r/{s}" for s in subs)
+            status = "[!] Reddit bloqueado" if not subs else ", ".join(f"r/{s}" for s in subs)
             print(f"  {iso2}: {status}")
         sys.exit(0)
 
@@ -298,3 +298,4 @@ if __name__ == "__main__":
 
     print(f"\n{'='*40}")
     print(f"Total insertados: {total['inserted']} | Errores: {total['errors']}")
+

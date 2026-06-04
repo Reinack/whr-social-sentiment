@@ -1,4 +1,4 @@
-"""
+﻿"""
 loaders/load_youtube.py
 Recolecta comentarios de videos trending por país usando YouTube Data API v3.
 Es la fuente primaria para Indonesia, Corea del Sur y Vietnam.
@@ -22,7 +22,7 @@ try:
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
 except ImportError:
-    print("⚠ Instalar: pip install google-api-python-client")
+    print("[!] Instalar: pip install google-api-python-client")
     sys.exit(1)
 
 # Ventana temporal
@@ -70,7 +70,7 @@ def load_youtube(
     """Recolecta comentarios de YouTube para un país dado."""
 
     if iso2.upper() not in YOUTUBE_REGIONS:
-        print(f"  ⚠ {iso2}: no configurado")
+        print(f"  [!] {iso2}: no configurado")
         return {"skipped": 1}
 
     region_code, lang = YOUTUBE_REGIONS[iso2.upper()]
@@ -91,7 +91,7 @@ def load_youtube(
         ).fetchone()
 
     if not country or not platform:
-        print("  ✗ country o platform no encontrado")
+        print("  [X] country o platform no encontrado")
         return {"errors": 1}
 
     country_id  = country.id
@@ -102,7 +102,7 @@ def load_youtube(
     print(f"  Videos encontrados: {len(video_ids)}")
 
     if not video_ids:
-        print("  ✗ No se encontraron videos")
+        print("  [X] No se encontraron videos")
         return {"no_data": 1}
 
     # Recolectar comentarios de los videos
@@ -148,9 +148,9 @@ def load_youtube(
                 stats["inserted"] += 1
             except Exception as e:
                 stats["errors"] += 1
-                print(f"    ✗ {e}")
+                print(f"    [X] {e}")
 
-    print(f"  ✓ Insertados: {stats['inserted']} | Errores: {stats['errors']}")
+    print(f"  [OK] Insertados: {stats['inserted']} | Errores: {stats['errors']}")
     return stats
 
 
@@ -184,7 +184,7 @@ def _get_video_ids(youtube, region_code: str, query: str) -> list[str]:
             time.sleep(0.5)  # respetar rate limits
 
         except HttpError as e:
-            print(f"    ⚠ Error API en {current.strftime('%Y-%m')}: {e.reason}")
+            print(f"    [!] Error API en {current.strftime('%Y-%m')}: {e.reason}")
 
         current = end
 
@@ -250,7 +250,7 @@ def _get_comments(
             if "commentsDisabled" in str(e):
                 pass  # video sin comentarios, continuar
             else:
-                print(f"    ⚠ Error en video {video_id}: {e.reason}")
+                print(f"    [!] Error en video {video_id}: {e.reason}")
 
     return comments
 
@@ -264,7 +264,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.api_key:
-        print("✗ YOUTUBE_API_KEY no configurado")
+        print("[X] YOUTUBE_API_KEY no configurado")
         sys.exit(1)
 
     countries = list(YOUTUBE_REGIONS.keys()) if args.country == "ALL" \
@@ -278,3 +278,4 @@ if __name__ == "__main__":
 
     print(f"\n{'='*40}")
     print(f"Total insertados: {total['inserted']} | Errores: {total['errors']}")
+

@@ -1,4 +1,4 @@
-"""
+﻿"""
 loaders/load_whr.py
 Carga el archivo Excel WHR 2026 (Figura 2.1) a la tabla whr_scores.
 Filtra solo los 19 países del estudio y los años 2022-2024.
@@ -81,7 +81,7 @@ def load_whr(path: str, dry_run: bool = False) -> dict:
     unmatched = df[df["iso2"].isna()]["Country name"].unique().tolist()
     print(f"  Países matcheados: {matched} / {len(df)}")
     if unmatched:
-        print(f"  ⚠ Sin match (se ignoran): {unmatched[:10]}")
+        print(f"  [!] Sin match (se ignoran): {unmatched[:10]}")
 
     # Solo países del estudio
     df = df[df["iso2"].notna()].copy()
@@ -111,7 +111,7 @@ def load_whr(path: str, dry_run: bool = False) -> dict:
         for _, row in df.iterrows():
             iso2 = row["iso2"]
             if iso2 not in iso2_to_id:
-                print(f"  ⚠ País {iso2} no encontrado en tabla countries — omitido")
+                print(f"  [!] País {iso2} no encontrado en tabla countries — omitido")
                 stats["errors"] += 1
                 continue
 
@@ -163,7 +163,7 @@ def load_whr(path: str, dry_run: bool = False) -> dict:
             else:
                 stats["updated"] += 1
 
-    print(f"\n✓ Completado:")
+    print(f"\n[OK] Completado:")
     print(f"  Insertados: {stats['inserted']}")
     print(f"  Actualizados: {stats['updated']}")
     print(f"  Errores: {stats['errors']}")
@@ -192,7 +192,7 @@ def verify_load():
         """)).fetchall()
 
     if not rows:
-        print("⚠ No hay datos en whr_scores")
+        print("[!] No hay datos en whr_scores")
         return
 
     print(f"\n{'ISO2':6} {'País':20} {'Año':6} {'Score':8} {'Rank':6}")
@@ -213,3 +213,4 @@ if __name__ == "__main__":
         verify_load()
     else:
         load_whr(args.path, dry_run=args.dry_run)
+

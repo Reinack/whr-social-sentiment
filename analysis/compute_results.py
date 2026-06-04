@@ -1,4 +1,4 @@
-"""
+﻿"""
 analysis/compute_results.py
 Agrega clasificaciones aceptadas y calcula el gap sentimiento vs WHR.
 Puebla la tabla analysis_results con métricas mensuales por país × plataforma × subindicador.
@@ -76,7 +76,7 @@ def compute_results(country_iso2: str | None = None) -> dict:
 
         print(f"  Combinaciones a procesar: {len(agg_rows)}")
         if not agg_rows:
-            print("  ⚠ Sin datos — ¿hay clasificaciones aceptadas en la base?")
+            print("  [!] Sin datos — ¿hay clasificaciones aceptadas en la base?")
             return {"rows": 0}
 
         # ── 4. Para cada fila, calcular métricas y upsert en analysis_results
@@ -150,7 +150,7 @@ def compute_results(country_iso2: str | None = None) -> dict:
             })
             inserted += 1
 
-    print(f"  ✓ Filas upserted: {inserted}")
+    print(f"  [OK] Filas upserted: {inserted}")
     return {"rows": inserted}
 
 
@@ -241,7 +241,7 @@ def show_gaps(top_n: int = 20):
         """), {"top_n": top_n}).fetchall()
 
     if not rows:
-        print("  ⚠ No hay resultados calculados")
+        print("  [!] No hay resultados calculados")
         return
 
     print(f"\n{'ISO2':6} {'País':18} {'WHR#':5} {'Subindicador':16} {'Platform':10} "
@@ -269,3 +269,4 @@ if __name__ == "__main__":
         compute_results(args.country)
         if not args.country:
             show_gaps(args.top)
+

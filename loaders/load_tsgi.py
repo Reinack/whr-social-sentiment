@@ -1,4 +1,4 @@
-"""
+﻿"""
 loaders/load_tsgi.py
 Carga el dataset TSGI (Twitter Standardized Global Index) de MIT/Harvard
 a la tabla tsgi_index.
@@ -74,7 +74,7 @@ def load_tsgi(path: str, dry_run: bool = False) -> dict:
     """
     csv_files = _resolve_files(path)
     if not csv_files:
-        print(f"✗ No se encontraron archivos CSV en: {path}")
+        print(f"[X] No se encontraron archivos CSV en: {path}")
         return {"errors": 1}
 
     all_frames = []
@@ -85,10 +85,10 @@ def load_tsgi(path: str, dry_run: bool = False) -> dict:
             if df is not None and not df.empty:
                 all_frames.append(df)
         except Exception as e:
-            print(f"  ✗ Error leyendo {f.name}: {e}")
+            print(f"  [X] Error leyendo {f.name}: {e}")
 
     if not all_frames:
-        print("✗ Ningún archivo se pudo procesar")
+        print("[X] Ningún archivo se pudo procesar")
         return {"errors": 1}
 
     data = pd.concat(all_frames, ignore_index=True)
@@ -106,7 +106,7 @@ def load_tsgi(path: str, dry_run: bool = False) -> dict:
     print(f"  Filas para los 19 países: {len(data)}")
 
     if data.empty:
-        print("  ⚠ Sin datos tras filtros — verificar columnas del CSV")
+        print("  [!] Sin datos tras filtros — verificar columnas del CSV")
         return {"no_data": 1}
 
     if dry_run:
@@ -115,7 +115,7 @@ def load_tsgi(path: str, dry_run: bool = False) -> dict:
         return {"rows": len(data)}
 
     stats = _insert_to_db(data)
-    print(f"\n✓ Completado: {stats['inserted']} insertados | {stats['updated']} actualizados | {stats['errors']} errores")
+    print(f"\n[OK] Completado: {stats['inserted']} insertados | {stats['updated']} actualizados | {stats['errors']} errores")
     return stats
 
 
@@ -142,19 +142,19 @@ def _read_tsgi_file(filepath: Path) -> pd.DataFrame | None:
     # ── Detectar columna de país ───────────────────────────────
     country_col = _find_col(df.columns, COUNTRY_COL_CANDIDATES)
     if not country_col:
-        print(f"  ✗ No se encontró columna de país. Columnas disponibles: {list(df.columns)}")
+        print(f"  [X] No se encontró columna de país. Columnas disponibles: {list(df.columns)}")
         return None
 
     # ── Detectar columna de fecha ──────────────────────────────
     date_col = _find_col(df.columns, DATE_COL_CANDIDATES)
     if not date_col:
-        print(f"  ✗ No se encontró columna de fecha. Columnas disponibles: {list(df.columns)}")
+        print(f"  [X] No se encontró columna de fecha. Columnas disponibles: {list(df.columns)}")
         return None
 
     # ── Detectar columna de sentimiento ───────────────────────
     score_col = _find_col(df.columns, SCORE_COL_CANDIDATES)
     if not score_col:
-        print(f"  ✗ No se encontró columna de sentimiento. Columnas disponibles: {list(df.columns)}")
+        print(f"  [X] No se encontró columna de sentimiento. Columnas disponibles: {list(df.columns)}")
         return None
 
     # ── Detectar columna de conteo (opcional) ─────────────────
@@ -259,7 +259,7 @@ def _insert_to_db(data: pd.DataFrame) -> dict:
 
             except Exception as e:
                 stats["errors"] += 1
-                print(f"    ✗ Error en {iso2} / {row['index_date']}: {e}")
+                print(f"    [X] Error en {iso2} / {row['index_date']}: {e}")
 
     return stats
 
@@ -284,7 +284,7 @@ def verify_load():
         """)).fetchall()
 
     if not rows:
-        print("⚠ No hay datos en tsgi_index")
+        print("[!] No hay datos en tsgi_index")
         return
 
     print(f"\n{'ISO2':6} {'País':20} {'Días':7} {'Min':8} {'Max':8} {'Avg':8} {'Desde':12} {'Hasta':12}")
@@ -315,7 +315,7 @@ def show_monthly_summary():
         """)).fetchall()
 
     if not rows:
-        print("⚠ Sin datos")
+        print("[!] Sin datos")
         return
 
     current_country = None
@@ -351,9 +351,10 @@ if __name__ == "__main__":
         show_monthly_summary()
     else:
         if not Path(args.path).exists():
-            print(f"✗ Ruta no encontrada: {args.path}")
+            print(f"[X] Ruta no encontrada: {args.path}")
             print("  Descargar el dataset desde: https://doi.org/10.7910/DVN/3IL00Q")
             print("  Colocar el CSV en data/tsgi/ o ajustar TSGI_PATH en .env")
             sys.exit(1)
 
         stats = load_tsgi(args.path, dry_run=args.dry_run)
+

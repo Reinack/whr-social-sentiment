@@ -1,4 +1,4 @@
-"""
+﻿"""
 db.py — conexión centralizada a PostgreSQL via SQLAlchemy
 
 Prioridad de conexión:
@@ -49,7 +49,8 @@ def get_session():
 def test_connection():
     with get_session() as s:
         result = s.execute(text("SELECT version()")).scalar()
-        print(f"✓ Conectado: {result[:40]}...")
+        print(f"[OK] Conectado: {result[:40]}...")
 
 if __name__ == "__main__":
     test_connection()
+
