@@ -1,0 +1,19 @@
+# 1. Instalar dependencias
+pip install pandas openpyxl psycopg2-binary sqlalchemy python-dotenv \
+            anthropic google-api-python-client python-dateutil zstandard
+
+# 2. Crear la base y las tablas
+psql -U postgres -c "CREATE DATABASE whr_social;"
+psql -U postgres -d whr_social -f schema.sql
+
+# 3. Copiar .env.example → .env y completar claves
+
+# 4. Ejecutar fases en orden
+python run_pipeline.py --step whr        # carga el Excel que ya tenés
+python run_pipeline.py --step reddit     # requiere dumps Pushshift
+python run_pipeline.py --step youtube    # requiere YOUTUBE_API_KEY
+python run_pipeline.py --step classify   # requiere ANTHROPIC_API_KEY
+python run_pipeline.py --step analyze    # calcula los gaps
+
+# Ver estado en cualquier momento
+python run_pipeline.py --status

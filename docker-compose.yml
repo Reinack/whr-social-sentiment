@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: whr_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       whr_social
+      POSTGRES_USER:     whr
+      POSTGRES_PASSWORD: whr_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - whr_pgdata:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+volumes:
+  whr_pgdata:
