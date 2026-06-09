@@ -204,7 +204,29 @@ CREATE INDEX idx_class_accepted   ON classifications(accepted) WHERE accepted = 
 CREATE INDEX idx_class_confidence ON classifications(confidence);
 
 -- ============================================================
--- 6. TSGI_INDEX
+-- 6. HF_CLASSIFICATIONS (Etapa 1 del pipeline híbrido)
+-- ============================================================
+
+CREATE TABLE hf_classifications (
+    id            BIGSERIAL PRIMARY KEY,
+    post_id       BIGINT          NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    hf_sentiment  sentiment_type  NOT NULL,
+    hf_score      NUMERIC(5,4)    NOT NULL,  -- confianza del modelo HF (0-1)
+    hf_model      VARCHAR(100)    NOT NULL,  -- ej: twitter-xlm-roberta-base-sentiment
+    classified_at TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    UNIQUE (post_id)
+);
+
+CREATE INDEX idx_hf_post      ON hf_classifications(post_id);
+CREATE INDEX idx_hf_score     ON hf_classifications(hf_score);
+CREATE INDEX idx_hf_sentiment ON hf_classifications(hf_sentiment);
+
+COMMENT ON TABLE hf_classifications IS
+    'Sentimiento HuggingFace (etapa 1). Sin subindicador WHR. '
+    'Posts con hf_score < 0.55 se descartan antes de enviar a Claude.';
+
+-- ============================================================
+-- 7. TSGI_INDEX
 -- ============================================================
 
 CREATE TABLE tsgi_index (

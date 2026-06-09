@@ -106,10 +106,11 @@ def load_reddit(
     platform_id = platform.id
 
     # Recolectar candidatos de todos los subreddits
+    max_candidates = limit_per_country * 8  # techo por subreddit para no paginar infinito
     candidates = []
     for sub in subreddits:
         print(f"  Consultando r/{sub}...")
-        sub_candidates = _fetch_subreddit(sub)
+        sub_candidates = _fetch_subreddit(sub, max_candidates=max_candidates)
         print(f"    {len(sub_candidates)} comentarios en ventana 2022-2024")
         candidates.extend(sub_candidates)
 
@@ -163,10 +164,10 @@ def load_reddit(
     return stats
 
 
-def _fetch_subreddit(subreddit: str) -> list[dict]:
+def _fetch_subreddit(subreddit: str, max_candidates: int = 2000) -> list[dict]:
     """
     Descarga comentarios de un subreddit via Pullpush paginando por timestamp.
-    Retorna todos los candidatos dentro de la ventana 2022-2024.
+    Retorna hasta max_candidates candidatos dentro de la ventana 2022-2024.
     """
     candidates = []
     before = END_TS
@@ -174,6 +175,9 @@ def _fetch_subreddit(subreddit: str) -> list[dict]:
     consecutive_errors = 0
 
     while True:
+        if len(candidates) >= max_candidates:
+            print(f"    [~] Límite de {max_candidates} candidatos alcanzado, cortando paginación")
+            break
         try:
             resp = requests.get(
                 PULLPUSH_URL,

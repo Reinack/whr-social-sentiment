@@ -135,6 +135,45 @@ def step_analyze():
     return True
 
 
+def _show_classifier_process():
+    """Muestra si hay un clasificador corriendo, leyendo classifier.pid."""
+    pid_file = os.path.join(os.path.dirname(__file__), "classifier.pid")
+    if not os.path.exists(pid_file):
+        return
+
+    data = {}
+    for line in open(pid_file):
+        if "=" in line:
+            k, v = line.strip().split("=", 1)
+            data[k] = v
+
+    pid = int(data.get("pid", 0))
+
+    # Verificar si el proceso sigue vivo usando os.kill(pid, 0)
+    alive = False
+    try:
+        os.kill(pid, 0)
+        alive = True
+    except (OSError, ProcessLookupError):
+        pass
+
+    if not alive:
+        os.remove(pid_file)
+        print(f"\n  ⚙  Clasificador MUERTO — PID {pid} ya no existe (pid file limpiado)")
+        print(f"     Último modelo:  {data.get('model', '?')}")
+        print(f"     Clasificados:   {data.get('classified_this_run', '0')} en esa sesión")
+        print(f"     → Podés relanzar con: python -m classifier.classify_posts --resume")
+        print()
+        return
+
+    print(f"\n  ⚙  Clasificador EN EJECUCIÓN")
+    print(f"     PID:      {pid}")
+    print(f"     Modelo:   {data.get('model', '?')}")
+    print(f"     Inicio:   {data.get('started', '?')[:19].replace('T', ' ')}")
+    print(f"     Clasif.:  {data.get('classified_this_run', '0')} en esta sesión")
+    print()
+
+
 def show_status():
     """Muestra el estado actual del pipeline."""
     log("━━ ESTADO DEL PIPELINE ━━")
@@ -163,6 +202,8 @@ def show_status():
   Resultados de análisis: {counts.results}
   Filas TSGI:             {counts.tsgi_rows}
     """)
+
+    _show_classifier_process()
 
     if counts.accepted > 0:
         print("  Preview gaps (top 5):")

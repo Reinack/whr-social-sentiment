@@ -1,6 +1,6 @@
 ﻿"""
 classifier/classify_posts.py
-Clasifica posts usando Claude (Sonnet) por subindicador WHR, sentimiento e intensidad.
+Clasifica posts usando Groq (llama3) por subindicador WHR, sentimiento e intensidad.
 Procesa en lotes, respeta rate limits y registra todo en la tabla classifications.
 
 Uso:
@@ -19,48 +19,64 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from sqlalchemy import text
 from db import get_session
 
+PID_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "classifier.pid")
+
+
+def _write_pid(model: str, batch_size: int, resume: bool):
+    with open(PID_FILE, "w") as f:
+        f.write(f"pid={os.getpid()}\n")
+        f.write(f"started={datetime.now().isoformat()}\n")
+        f.write(f"model={model}\n")
+        f.write(f"batch_size={batch_size}\n")
+        f.write(f"resume={resume}\n")
+
+
+def _update_pid(model: str, classified: int):
+    try:
+        if not os.path.exists(PID_FILE):
+            return
+        with open(PID_FILE, "r") as f:
+            lines = f.readlines()
+        data = {l.split("=")[0]: l.split("=",1)[1].strip() for l in lines if "=" in l}
+        data["model"] = model
+        data["classified_this_run"] = str(classified)
+        data["last_update"] = datetime.now().isoformat()
+        with open(PID_FILE, "w") as f:
+            for k, v in data.items():
+                f.write(f"{k}={v}\n")
+    except OSError:
+        pass  # no crítico, ignorar errores de I/O en el PID file
+
+
+def _remove_pid():
+    if os.path.exists(PID_FILE):
+        os.remove(PID_FILE)
+
 try:
-    import anthropic
+    import truststore
+    truststore.inject_into_ssl()
 except ImportError:
-    print("[!] Instalar: pip install anthropic")
+    pass  # truststore opcional, solo necesario en Windows con certs corporativos
+
+try:
+    from groq import Groq
+except ImportError:
+    print("[!] Instalar: pip install groq")
     sys.exit(1)
 
-MODEL = "claude-sonnet-4-20250514"
+# Modelos en orden de preferencia por key.
+MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "gemma2-9b-it",
+    "llama3-8b-8192",
+]
 CONFIDENCE_THRESHOLD = 0.7
 
-SYSTEM_PROMPT = """Eres un clasificador de texto para investigación académica sobre bienestar y felicidad.
-Se te dará una afirmación extraída de redes sociales junto con el país e idioma de origen.
-
-Tu tarea es clasificarla según los subindicadores del World Happiness Report (WHR).
-
-SUBINDICADORES disponibles:
-- apoyo_social: menciona familia, amigos, soledad, comunidad, apoyo emocional
-- libertad: menciona libertad, derechos, censura, autonomía, democracia, elecciones
-- economia_pib: menciona trabajo, salario, inflación, pobreza, costo de vida, desempleo
-- salud: menciona salud, hospitales, bienestar físico, esperanza de vida, medicina
-- generosidad: menciona donaciones, voluntariado, solidaridad, ayuda comunitaria
-- corrupcion: menciona corrupción, gobierno corrupto, impunidad, confianza institucional
-- ninguno: no corresponde claramente a ningún subindicador
-
-RESPONDE ÚNICAMENTE con JSON válido, sin texto adicional, sin backticks:
-{
-  "subindicador": "...",
-  "sentimiento": "positivo|negativo|neutro",
-  "intensidad": 1|2|3,
-  "confianza": 0.0-1.0,
-  "razon": "una frase corta explicando la clasificación"
-}
-
-INTENSIDAD:
-1 = leve (mención casual, sin emoción fuerte)
-2 = moderada (opinión clara)
-3 = fuerte (emoción intensa, queja grave, celebración marcada)
-
-CONFIANZA:
-1.0 = clasificación muy clara
-0.7-0.9 = bastante claro
-0.5-0.7 = dudoso (mixto o ambiguo)
-< 0.5 = muy incierto"""
+SYSTEM_PROMPT = """Clasificador WHR. Responde SOLO JSON sin backticks.
+Subindicadores: apoyo_social|libertad|economia_pib|salud|generosidad|corrupcion|ninguno
+Sentimiento: positivo|negativo|neutro. Intensidad: 1=leve,2=moderada,3=fuerte. Confianza: 0.0-1.0.
+{"subindicador":"...","sentimiento":"...","intensidad":1,"confianza":0.0,"razon":"..."}"""
 
 
 def classify_batch(
@@ -71,75 +87,123 @@ def classify_batch(
 ) -> dict:
     """
     Clasifica posts pendientes en lotes.
-    'Pendiente' = post sin clasificación en la tabla classifications.
+    Rota modelos automáticamente cuando uno alcanza su límite diario.
     """
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    # Guardia: no lanzar si ya hay un proceso corriendo
+    if os.path.exists(PID_FILE):
+        data = {l.split("=")[0]: l.split("=",1)[1].strip()
+                for l in open(PID_FILE) if "=" in l}
+        existing_pid = int(data.get("pid", 0))
+        try:
+            os.kill(existing_pid, 0)  # 0 = solo verificar, no matar
+            print(f"[!] Ya hay un clasificador corriendo (PID {existing_pid}, "
+                  f"modelo {data.get('model','?')}, "
+                  f"inicio {data.get('started','?')[:19].replace('T',' ')})")
+            print(f"    Si el proceso murió, eliminá classifier.pid y reintentá.")
+            sys.exit(1)
+        except (OSError, ProcessLookupError):
+            # PID no existe, el archivo es huérfano — lo limpiamos
+            os.remove(PID_FILE)
+
+    # Construir lista de (client, model) combinando todas las keys × modelos
+    # Lee GROQ_API_KEY, GROQ_API_KEY_2, GROQ_API_KEY_3, ... automáticamente
+    api_keys = [k for k in [
+        os.getenv("GROQ_API_KEY"),
+        *[os.getenv(f"GROQ_API_KEY_{i}") for i in range(2, 10)]
+    ] if k]
+    slots = [(Groq(api_key=k), m) for k in api_keys for m in MODELS]
+    slot_idx = 0
 
     stats = {"classified": 0, "accepted": 0, "rejected": 0, "errors": 0}
 
-    while True:
-        # Traer siguiente lote de posts sin clasificar
-        posts = _get_pending_posts(batch_size, country_iso2)
-        if not posts:
-            print("  [OK] No quedan posts pendientes")
-            break
+    _write_pid(slots[0][1], batch_size, resume)
 
-        print(f"\n  Procesando lote de {len(posts)} posts...")
+    try:
+        while True:
+            if slot_idx >= len(slots):
+                print("  [!] Todos los modelos y keys alcanzaron su límite diario. Reintentar mañana.")
+                break
 
-        for post in posts:
-            result = _classify_one(client, post)
+            client, model = slots[slot_idx]
+            _update_pid(model, stats["classified"])
 
-            if result is None:
-                stats["errors"] += 1
-                continue
+            posts = _get_pending_posts(batch_size, country_iso2)
+            if not posts:
+                print("  [OK] No quedan posts pendientes")
+                break
 
-            if dry_run:
-                print(f"  [{post['iso2']}] {post['body'][:60]}...")
-                print(f"    → {result['subindicador']} / {result['sentimiento']} / conf={result['confianza']}")
+            print(f"\n  Procesando lote de {len(posts)} posts... [modelo: {model}]")
+
+            quota_hit = False
+            for post in posts:
+                result = _classify_one(client, post, model)
+
+                if result == "QUOTA":
+                    key_num = (slot_idx // len(MODELS)) + 1
+                    print(f"  [~] Límite diario de key{key_num}/{model}, rotando al siguiente slot...")
+                    slot_idx += 1
+                    quota_hit = True
+                    break
+
+                if result is None:
+                    stats["errors"] += 1
+                    continue
+
+                if dry_run:
+                    print(f"  [{post['iso2']}] {post['body'][:60]}...")
+                    print(f"    → {result['subindicador']} / {result['sentimiento']} / conf={result['confianza']}")
+                    stats["classified"] += 1
+                    if result["confianza"] >= CONFIDENCE_THRESHOLD:
+                        stats["accepted"] += 1
+                    else:
+                        stats["rejected"] += 1
+                    continue
+
+                _save_classification(post["post_id"], result)
                 stats["classified"] += 1
                 if result["confianza"] >= CONFIDENCE_THRESHOLD:
                     stats["accepted"] += 1
                 else:
                     stats["rejected"] += 1
-                continue
 
-            _save_classification(post["post_id"], result)
-            stats["classified"] += 1
-            if result["confianza"] >= CONFIDENCE_THRESHOLD:
-                stats["accepted"] += 1
-            else:
-                stats["rejected"] += 1
+                # Rate limit: 30 RPM en free tier de Groq
+                time.sleep(2.1)
 
-            # Rate limit: ~60 requests/min en Sonnet
-            time.sleep(1.1)
+            if not quota_hit:
+                print(f"  Lote completado. Clasificados: {stats['classified']} "
+                      f"| Aceptados: {stats['accepted']} | Rechazados: {stats['rejected']}")
 
-        print(f"  Lote completado. Clasificados: {stats['classified']} "
-              f"| Aceptados: {stats['accepted']} | Rechazados: {stats['rejected']}")
+            if not resume and not quota_hit:
+                break
 
-        if not resume:
-            break
+    finally:
+        _remove_pid()
 
     return stats
 
 
-def _classify_one(client, post: dict) -> dict | None:
-    """Clasifica un post individual con Claude."""
+def _classify_one(client, post: dict, model: str) -> dict | None | str:
+    """
+    Clasifica un post individual con Groq.
+    Retorna "QUOTA" si se alcanzó el límite diario del modelo.
+    """
     user_msg = (
-        f"País: {post['country_name']} ({post['iso2']})\n"
-        f"Idioma esperado: {post['lang_expected'] or 'desconocido'}\n"
-        f"Red social: {post['platform']}\n\n"
-        f"Texto:\n{post['body']}"
+        f"País: {post['country_name']} ({post['iso2']}). "
+        f"Red: {post['platform']}.\n{post['body']}"
     )
 
     try:
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=256,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_msg}],
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=128,
+            temperature=0.1,
         )
 
-        raw = response.content[0].text.strip()
+        raw = response.choices[0].message.content.strip()
 
         # Limpiar posibles backticks
         raw = raw.replace("```json", "").replace("```", "").strip()
@@ -165,16 +229,34 @@ def _classify_one(client, post: dict) -> dict | None:
 
         parsed["intensidad"]   = max(1, min(3, int(parsed["intensidad"])))
         parsed["confianza"]    = max(0.0, min(1.0, float(parsed["confianza"])))
-        parsed["model_version"] = MODEL
+        parsed["model_version"] = model
         parsed["raw_response"] = raw
 
         return parsed
 
     except json.JSONDecodeError as e:
-        print(f"    [X] JSON inválido para post {post['post_id']}: {e}")
-        return None
+        print(f"    [X] JSON inválido para post {post['post_id']}: {e} — guardando fallback")
+        return {
+            "subindicador": "ninguno", "sentimiento": "neutro",
+            "intensidad": 1, "confianza": 0.0,
+            "razon": f"parse_error: {str(e)[:80]}",
+            "model_version": model, "raw_response": '{"error":"json_parse"}',
+        }
     except Exception as e:
+        msg = str(e)
+        if "429" in msg and ("TPD" in msg or "per day" in msg or "quota" in msg.lower()):
+            return "QUOTA"
+        if "decommissioned" in msg or "model_decommissioned" in msg:
+            return "QUOTA"  # tratar como quota para rotar al siguiente slot
         print(f"    [X] Error clasificando post {post['post_id']}: {e}")
+        # Respuesta vacía u otro error de API — guardar fallback para no reintentar
+        if not msg or "content" in msg.lower() or len(msg) < 20:
+            return {
+                "subindicador": "ninguno", "sentimiento": "neutro",
+                "intensidad": 1, "confianza": 0.0,
+                "razon": "api_error: empty_response",
+                "model_version": model, "raw_response": '{"error":"api_error"}',
+            }
         return None
 
 
@@ -216,7 +298,7 @@ def _save_classification(post_id: int, result: dict):
                  confidence, model_version, raw_response)
             VALUES
                 (:post_id, :subindicador, :sentimiento, :intensidad,
-                 :confianza, :model_version, :raw_response::jsonb)
+                 :confianza, :model_version, CAST(:raw_response AS jsonb))
             ON CONFLICT (post_id) DO UPDATE SET
                 subindicator  = EXCLUDED.subindicator,
                 sentiment     = EXCLUDED.sentiment,
@@ -276,8 +358,8 @@ if __name__ == "__main__":
     if args.stats:
         show_stats()
     else:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            print("[X] ANTHROPIC_API_KEY no configurado")
+        if not os.getenv("GROQ_API_KEY"):
+            print("[X] GROQ_API_KEY no configurado")
             sys.exit(1)
 
         stats = classify_batch(

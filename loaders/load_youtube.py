@@ -104,7 +104,7 @@ def load_youtube(
     platform_id = platform.id
 
     # Recolectar video IDs por trimestre (para cubrir 2022-2024 uniformemente)
-    video_ids = _get_video_ids(api_key, region_code, search_q)
+    video_ids = _get_video_ids(api_key, region_code, search_q, lang)
     print(f"  Videos encontrados: {len(video_ids)}")
 
     if not video_ids:
@@ -160,7 +160,7 @@ def load_youtube(
     return stats
 
 
-def _get_video_ids(api_key: str, region_code: str, query: str) -> list[str]:
+def _get_video_ids(api_key: str, region_code: str, query: str, lang: str) -> list[str]:
     """Busca videos relevantes para la región usando requests."""
     video_ids = []
     current = START_DATE
